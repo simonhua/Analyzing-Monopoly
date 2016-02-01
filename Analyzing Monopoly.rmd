@@ -1,0 +1,601 @@
+---
+title: "Analyzing Monopoly"
+author: "Simon Hua"
+date: "November 11, 2015"
+output: html_document
+---
+
+We will create a simulation of the classic board game, Monopoly.
+
+We will not be simulating the entire game.  We will be simulating only the movement of pieces, and will keep track of which squares the pieces land on.
+
+
+## Rules for movement
+
+The Monopoly Board is effectively a circle with 40 spaces on which a player can land. Players move from space to space around the board in a circle (square).
+
+The number of spaces a player moves is determined by the roll of 2 dice. Most often, the player will roll the dice, land on a space, and end his turn there.
+
+There are, however, several exceptions which provide the primary source of variation in space landing:
+
+One space sends players directly to jail. This space never counts as having been "landed upon." As soon as the player lands here, he is immediately sent to jail, and the jail space gets counted as landed upon. This is the only space on the game board that moves a player's piece. 
+
+If a player rolls doubles (two of the same number), the player moves his piece, and then gets to roll the dice again for another move. However, if a player rolls doubles three times in a row, he is sent directly to jail. (The third space that the player would have 'landed on' does not count, but the jail space gets counted as landed on.)
+
+### Card Decks
+
+A player can land on a "Chance" or "Community Chest" space. When a player lands on these spaces, he draws a card from the respective deck and follows its instructions. The instructions will sometimes give money to or take money from the player with no change in the player's position on the board. Other times, the card will instruct the player to move to another space on the board. The list of cards that can be drawn from each deck is provided below.
+
+There are nine cards in the Chance deck that move the player's token. There are two cards in the Community Chest deck that move the player's token. All other cards do not move the player's token.
+
+A card may say 'move to the nearest railroad' or 'move to the nearest utility' or even 'go to property xxx'. In these cases, the player always moves forward. So if a player is on 'Oriental Avenue,' the nearest railroad is 'Pennsylvania Railroad' and NOT 'Reading Railroad.'
+
+The Chance and Community Chest spaces always get counted as "landed on" even if the card drawn moves the player to another space or sends him to jail. In those cases, a tally is counted for the Chance/Community Chest space, the token is moved, and then a tally is counted for the space where the player ends his turn.
+
+### Jail
+
+Jail is the most complicated aspect of this simulation.
+
+If a player lands on space 11 (Jail), he is not in Jail. He is 'just visiting.' His play continues on as normal.
+
+A player can be placed in jail in several ways: he can roll doubles three times in a row. He can land on the "go to jail space." He can draw a card that sends hims to jail.
+
+When in jail, the player has the option to pay a fee to 'get out,' or he can choose not to pay the fee.
+
+If he pays the fee, he is out of jail, and his play continues normally as before.
+
+If he chooses not to pay the fee, he rolls the dice. If he rolls doubles on the dice, he gets out of jail and move the number of spaces the dice show. However, despite rolling doubles, he does not roll again. He takes his move out of jail and his turn ends. If he does not roll doubles, he stays in jail.
+
+A player cannot stay in jail for more than three turns. On his third turn in jail, he rolls the dice and moves the number of spaces the dice show no matter what. If they are doubles, he moves those spaces for free. If he does not roll doubles, he moves those spaces, but must also pay a fee.
+
+Play then continues as normal.
+
+<http://monopoly.wikia.com/wiki/Jail>
+
+For this simulation, each time a player ends his turn in Jail, a tally will be counted as having been 'landed upon.'
+
+We will simulate a 'long stay' strategy for Jail. This effectively means that the player will never pay the fee to get out jail unless forced to do so. Effectively, this means that he will roll the dice and only leave jail if he gets double or it is his third turn in jail.
+
+## Simulation
+
+Our task is to run 5,000 simulations of a two-player game that lasts 200 rolls (or 100 turns, whatever you decide). This is a total of 2 million dice rolls - 5000 games x 200 rolls x 2 dice.
+
+Our task is to keep track of where each player lands. Advance the tokens around the board according to the rules. We got to keep in mind the special situations involving the cards, jail, and rolling doubles.
+
+Below are the necessary data frames for the game board, and the two decks of cards.
+
+```{r}
+gameboard <- data.frame(space = 1:40, title = c("Go" , "Mediterranean Avenue" , "Community Chest" , "Baltic Avenue" , "Income Tax" , "Reading Railroad" , "Oriental Avenue" , "Chance" , "Vermont Avenue" , "Connecticut Avenue" , "Jail" , "St. Charles Place" , "Electric Company" , "States Avenue" , "Virginia Avenue" , "Pennsylvania Railroad" , "St. James Place" , "Community Chest" , "Tennessee Avenue" , "New York Avenue" , "Free Parking" , "Kentucky Avenue" , "Chance" , "Indiana Avenue" , "Illinois Avenue" , "B & O Railroad" , "Atlantic Avenue" , "Ventnor Avenue" , "Water Works" , "Marvin Gardens" , "Go to jail" , "Pacific Avenue" , "North Carolina Avenue" , "Community Chest" , "Pennsylvania Avenue" , "Short Line Railroad" , "Chance" , "Park Place" , "Luxury Tax" , "Boardwalk"))
+
+chancedeck <- data.frame(index = 1:15, card = c("Advance to Go" , "Advance to Illinois Ave." , "Advance to St. Charles Place" , "Advance token to nearest Utility" , "Advance token to the nearest Railroad" , "Take a ride on the Reading Railroad" , "Take a walk on the Boardwalk" , "Go to Jail" , "Go Back 3 Spaces" , "Bank pays you dividend of $50" , "Get out of Jail Free" , "Make general repairs on all your property" , "Pay poor tax of $15" , "You have been elected Chairman of the Board" , "Your building loan matures"))
+
+communitydeck <- data.frame(index = 1:16, card = c("Advance to Go" , "Go to Jail" , "Bank error in your favor ??? Collect $200" , "Doctor's fees Pay $50" , "From sale of stock you get $45" , "Get Out of Jail Free" , "Grand Opera Night Opening" , "Xmas Fund matures" , "Income tax refund" , "Life insurance matures ??? Collect $100" , "Pay hospital fees of $100" , "Pay school tax of $150" , "Receive for services $25" , "You are assessed for street repairs" , "You have won second prize in a beauty contest" , "You inherit $100"))
+```
+
+
+Here is a simple function to roll two dice.
+
+```{r}
+dice <- function()
+{
+    faces <- sample(1:6, 2, replace=TRUE)
+    if(faces[1] == faces[2]) doubles = TRUE
+    else doubles = FALSE
+    movement = sum(faces)
+    return(list(faces=faces, doubles=doubles, movement=movement))
+}
+```
+
+The final output will be a list of the spaces on the board and how many times the space was landed upon. Arrange the table in descending order of frequency of landing.
+
+We do not have to simulate or track money at all in this simulation.
+
+HERE WE GO!!!
+
+```{r, error = TRUE}
+#Add a tally/count column
+gameboard$tally <- rep(0,40)
+
+#takes as input the position of player and returns the position after the community card is drawn
+community <- function(x)
+{
+  y <- sample(1:16, 1)
+  
+  if (y == 1) # Advance to go
+    return(1)
+  else if (y == 2) # Go to jail
+    return(11)
+  else            # community chest cards that don't involve movement
+    return(x)
+}
+
+#takes as input the position of player and returns the position after the chance card is drawn
+chance <- function(x)
+{
+  y <- sample(1:15, 1)
+  
+  if (y == 1) # Advance to go
+    return(1)
+  else if (y == 2) # Illinois Ave.
+    return(25)
+  else if (y == 3) # St. Charles Place
+    return(12)
+  else if (y == 4) # Nearest utility
+  {
+    if(x == 8 | x == 37)
+      return(13)
+    if(x == 23)
+      return(29)
+  }
+  else if (y == 5) # Nearest railroad
+  {
+    if(x == 8)
+      return(16)
+    if(x == 23)
+      return(26)
+    if(x == 37)
+      return(6)
+  }
+  else if (y == 6) # Reading railroad
+    return(6)
+  else if (y == 7) # Boardwalk
+    return(40)
+  else if (y == 8) # Jail
+    return(11)
+  else if (y == 9) # 3 steps back
+    return(x-3)
+  else            # chance cards that don't involve movement
+    return(x)
+}
+
+Game <- setRefClass("Game", 
+                   fields = list(
+                       spaces = "numeric",  # keeps track of all the spaces the players land on
+                       pos1 = "numeric",    # current position of player1 on the board
+                       pos2 = "numeric",
+                       jail1 = "numeric",   # number of turns left in jail for player1
+                       jail2 = "numeric",
+                       double1 = "numeric", # keeps track of how many doubles player1 has rolled
+                       double2 = "numeric"
+                       ##debug = "logical"   # display informative messages?
+                   ), 
+                   methods = list(
+                     
+                       start = function()
+                       {
+                         pos1 <<- 1; #both players start at the first square "Go"
+                         pos2 <<- 1;
+                         jail1 <<- 0;
+                         jail2 <<- 0;
+                         double1 <<- 0;
+                         double2 <<- 0;
+                       },
+                       
+                       #this function represents a whole turn for a player, which may include
+                       #more than one roll
+                       player1 = function()
+                       {
+                         player1_move()
+                         
+                         while (double1 >= 1 & jail1 == 0)
+                           player1_move()
+                       },
+                       
+                       ##represents what can happen in one roll
+                       player1_move = function() {
+                         if(jail1 == 0) # not in jail
+                         {
+                           roll1 <- dice()
+                           
+                           if(roll1$doubles == TRUE)
+                             double1 <<- double1 + 1
+                           else
+                             double1 <<- 0 # if not a double we have to reset back to 0
+                           
+                           if(double1 == 3) # rolled doubles 3 times
+                           {
+                             jail1 <<- 3
+                             pos1 <<- 11
+                             double1 <<- 0 # once you go to jail for rolling 3 doubles, RESET
+                           }
+                           else # we haven't rolled 3 doubles so 0, 1, or 2 doubles
+                           {
+                           pos1 <<- pos1 + roll1$movement #move
+                           
+                           if(pos1 == 3 | pos1 == 18 | pos1 == 34) #community chest
+                           {
+                             x <- community(pos1)
+                             
+                             if(x != pos1)
+                             {
+                               spaces <<- append(spaces, pos1) # tally the spot before we move
+                               gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1 
+                               pos1 <<- x # move to new space
+                               
+                               if(x == 11) # jail 
+                               {
+                                jail1 <<- 3
+                                double1 <<- 0 # once we go to jail, our double count resets
+                               }
+                             }
+                           }
+                           
+                           if(pos1 == 8 | pos1 == 23 | pos1 == 37) #chance
+                           {
+                             x <- chance(pos1)
+                             
+                             if(x != pos1)
+                             {
+                               spaces <<- append(spaces, pos1)
+                               gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1
+                               pos1 <<- x
+                               
+                               if(x == 11)
+                               {
+                                jail1 <<- 3
+                                double1 <<- 0
+                               }
+                               
+                               if(x == 34) # if we land on chance on spot 37 and move three steps back
+                               {
+                                 x <- community(pos1)
+                             
+                                 if(x != pos1)
+                                 {
+                                   spaces <<- append(spaces, pos1)
+                                   gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1
+                                   pos1 <<- x
+                               
+                                   if(x == 11)
+                                   {
+                                    jail1 <<- 3
+                                    double1 <<- 0
+                                   }
+                                 }
+                                }
+                              }
+                           }
+                           
+                           if (pos1 == 31) # Go to jail square
+                           {
+                             pos1 <<- 11
+                             jail1 <<- 3
+                             double1 <<- 0 # once we go to jail, we must reset our doubles counter
+                           }
+                           
+                           if (pos1 > 40) #once we pass Boardwalk, we go back to "Go"
+                           {
+                             pos1 <<- pos1 - 40
+                           }
+                           
+                           }
+                         }
+                         else if(jail1 == 3 | jail1 == 2) # first or second turn in jail
+                         {
+                           roll1 <- dice()
+                           if(roll1$doubles == TRUE)  # Rolled a double so get out of jail
+                           {
+                             pos1 <<- pos1 + roll1$movement
+                             jail1 <<- 0
+                             
+                             if(pos1 == 18)
+                             {
+                               x <- community(pos1)
+                             
+                               if(x != pos1)
+                               {
+                                 spaces <<- append(spaces, pos1)
+                                 gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1
+                                 pos1 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail1 <<- 3
+                                  double1 <<- 0
+                                 }
+                               }
+                             }
+                             
+                             if(pos1 == 23) #chance
+                             {
+                               x <- chance(pos1)
+                             
+                               if(x != pos1)
+                               {
+                                 spaces <<- append(spaces, pos1)
+                                 gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1
+                                 pos1 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail1 <<- 3
+                                  double1 <<- 0
+                                 }
+                               }
+                             }
+                           }
+                           else # if we didn't roll a double, we stay in jail
+                           {
+                             jail1 <<- jail1 - 1
+                           }
+                         }
+                         
+                         else ## jail1 == 1; last turn in jail; we move out of jail no matter what
+                         {
+                           roll1 <- dice()
+                           pos1 <<- pos1 + roll1$movement
+                           jail1 <<- 0
+                           
+                           if(pos1 == 18)
+                           {
+                               x <- community(pos1)
+                             
+                               if(x != pos1)
+                               {
+                                 spaces <<- append(spaces, pos1)
+                                 gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1
+                                 pos1 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail1 <<- 3
+                                  double1 <<- 0
+                                 }
+                               }
+                            }
+                             
+                             if(pos1 == 23) #chance
+                             {
+                               x <- chance(pos1)
+                             
+                               if(x != pos1)
+                               {
+                                 spaces <<- append(spaces, pos1)
+                                 gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1
+                                 pos1 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail1 <<- 3
+                                  double1 <<- 0
+                                 }
+                               }
+                             }
+                         }
+                         
+                         # at the end of each roll, we need to tally where we ended up
+                         spaces <<- append(spaces, pos1)
+                         gameboard$tally[pos1] <<- gameboard$tally[pos1] + 1
+                       },
+                       
+                       
+                       ##the following two functions are exactly the same as player1 and player1_move
+                       ##except for the fact that they concern pos2, jail2, and double2 instead
+                       player2 = function()
+                       {
+                         player2_move()
+                         
+                         while (double2 >= 1 & jail2 == 0)
+                           player2_move()
+                       },
+                       
+                       player2_move = function() {
+                         if(jail2 == 0)
+                         {
+                           roll2 <- dice()
+                           
+                           if(roll2$doubles == TRUE)
+                             double2 <<- double2 + 1
+                           else
+                             double2 <<- 0
+                           
+                           if(double2 == 3)
+                           {
+                             jail2 <<- 3
+                             pos2 <<- 11
+                             double2 <<- 0 # once you go to jail for rolling 3 doubles, RESET
+                           }
+                           else
+                           {
+                           pos2 <<- pos2 + roll2$movement
+                           
+                           if(pos2 == 3 | pos2 == 18 | pos2 == 34) #community chest
+                           {
+                             x <- community(pos2)
+                             
+                             if(x != pos2)
+                             {
+                               spaces <<- append(spaces, pos2)
+                               gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                               pos2 <<- x
+                               
+                               if(x == 11)
+                               {
+                                jail2 <<- 3
+                                double2 <<- 0
+                               }
+                             }
+                           }
+                           
+                           if(pos2 == 8 | pos2 == 23 | pos2 == 37) #chance
+                           {
+                             x <- chance(pos2)
+                             
+                             if(x != pos2)
+                             {
+                               spaces <<- append(spaces, pos2)
+                               gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                               pos2 <<- x
+                               
+                               if(x == 11)
+                               {
+                                jail2 <<- 3
+                                double2 <<- 0
+                               }
+                               
+                               if(x == 34)
+                               {
+                                 x <- community(pos2)
+                             
+                                 if(x != pos2)
+                                 {
+                                   spaces <<- append(spaces, pos2)
+                                   gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                                   pos2 <<- x
+                               
+                                   if(x == 11)
+                                   {
+                                    jail2 <<- 3
+                                    double2 <<- 0
+                                   }
+                                 }
+                                }
+                              }
+                           }
+                           
+                           if (pos2 == 31) # Go to jail square
+                           {
+                             pos2 <<- 11
+                             jail2 <<- 3
+                             double2 <<- 0
+                           }
+                           
+                           if (pos2 > 40)
+                           {
+                             pos2 <<- pos2 - 40
+                           }
+                           
+                           }
+                         }
+                         else if(jail2 == 2 | jail2 == 3)
+                         {
+                           roll2 <- dice()
+                           if(roll2$doubles == TRUE)  # Rolled a double so get out of jail
+                           {
+                             pos2 <<- pos2 + roll2$movement
+                             jail2 <<- 0
+                             
+                             if(pos2 == 18)
+                             {
+                               x <- community(pos2)
+                             
+                               if(x != pos2)
+                               {
+                                 spaces <<- append(spaces, pos2)
+                                 gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                                 pos2 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail2 <<- 3
+                                  double2 <<- 0
+                                 }
+                               }
+                             }
+                             
+                             if(pos2 == 23) #chance
+                             {
+                               x <- chance(pos2)
+                             
+                               if(x != pos2)
+                               {
+                                 spaces <<- append(spaces, pos2)
+                                 gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                                 pos2 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail2 <<- 3
+                                  double2 <<- 0
+                                 }
+                               }
+                             }
+                           }
+                           else
+                           {
+                             jail2 <<- jail2 - 1
+                           }
+                         }
+                         
+                         else ## jail2 == 1
+                         {
+                           roll2 <- dice()
+                           pos2 <<- pos2 + roll2$movement
+                           jail2 <<- 0
+                           
+                           if(pos2 == 18)
+                           {
+                               x <- community(pos2)
+                             
+                               if(x != pos2)
+                               {
+                                 spaces <<- append(spaces, pos2)
+                                 gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                                 pos2 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail2 <<- 3
+                                  double2 <<- 0
+                                 }
+                               }
+                            }
+                             
+                             if(pos2 == 23) #chance
+                             {
+                               x <- chance(pos2)
+                             
+                               if(x != pos2)
+                               {
+                                 spaces <<- append(spaces, pos2)
+                                 gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                                 pos2 <<- x
+                               
+                                 if(x == 11)
+                                 {
+                                  jail2 <<- 3
+                                  double2 <<- 0
+                                 }
+                               }
+                             }
+                         }
+                           
+                         spaces <<- append(spaces, pos2)
+                         gameboard$tally[pos2] <<- gameboard$tally[pos2] + 1
+                       },
+                       
+                       history = function()
+                       {
+                         spaces;
+                       }
+                   )
+)
+
+#just a function that starts a new instance of a game
+new_game = function() 
+{
+    game = Game$new()
+    game$start()
+    game
+}
+
+for(i in 1:5000) # 5000 games
+{
+  game <- new_game()
+  for(i in 1:100) # of 100 turns, 200+ rolls
+  {
+    game$player1()
+    game$player2()
+  }
+}
+
+library(dplyr)
+gameboard <- arrange(gameboard, desc(tally))
+gameboard
+
+#used to check that the total number of rolls is indeed over 1 million
+sum(gameboard$tally)
+```
+
+
+Conclusion:  It seems that Jail is landed on most frequently, which is no surprise since there are so many ways a player can end up in jail.  Also, it seems that the spaces that are red and orange such as Illinois Avenue and New York Avenue are visited very frequently.  This makes sense because right after a player is in jail, it is very likely he/she will visit that corner/area of the board.  So the next time you are playing Monopoly, the lesson learned here is to invest around that area!
